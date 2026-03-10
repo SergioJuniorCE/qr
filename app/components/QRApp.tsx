@@ -85,6 +85,7 @@ export default function QRApp() {
   const [selectedDeviceId, setSelectedDeviceId] = useState<string | undefined>(undefined);
   const videoRef = useRef<HTMLVideoElement>(null);
   const cameraReaderRef = useRef<BrowserMultiFormatReader | null>(null);
+  const cameraControlsRef = useRef<{ stop: () => void } | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
 
   // Create state
@@ -301,8 +302,22 @@ export default function QRApp() {
   // ── Camera scanning ──────────────────────────────────────────────────────
 
   const stopCamera = useCallback(() => {
+    const reader = cameraReaderRef.current;
+    const controls = cameraControlsRef.current;
+    const resetMethod = (reader as unknown as { reset?: (() => void) | undefined } | null)?.reset;
+
+    // #region agent log
+    fetch('http://127.0.0.1:7691/ingest/3c8dd6a7-a9e4-48a9-b0f1-e78df23e676e',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'61c0e3'},body:JSON.stringify({sessionId:'61c0e3',runId:'camera-debug',hypothesisId:'H1-H3',location:'app/components/QRApp.tsx:stopCamera',message:'stopCamera cleanup capabilities',data:{hasReader:Boolean(reader),hasReaderReset:typeof resetMethod === 'function',hasControls:Boolean(controls),hasControlsStop:typeof controls?.stop === 'function',hasStream:Boolean(streamRef.current),trackCount:streamRef.current?.getTracks().length ?? 0},timestamp:Date.now()})}).catch(()=>{});
+    // #endregion
+
+    if (typeof controls?.stop === 'function') {
+      controls.stop();
+      cameraControlsRef.current = null;
+    }
     if (cameraReaderRef.current) {
-      cameraReaderRef.current.reset();
+      if (typeof resetMethod === 'function') {
+        resetMethod.call(reader);
+      }
       cameraReaderRef.current = null;
     }
     if (streamRef.current) {
@@ -330,6 +345,10 @@ export default function QRApp() {
       const reader = new BrowserMultiFormatReader(hints, { delayBetweenScanAttempts: 300 });
       cameraReaderRef.current = reader;
 
+      // #region agent log
+      fetch('http://127.0.0.1:7691/ingest/3c8dd6a7-a9e4-48a9-b0f1-e78df23e676e',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'61c0e3'},body:JSON.stringify({sessionId:'61c0e3',runId:'camera-debug',hypothesisId:'H1',location:'app/components/QRApp.tsx:startCamera',message:'camera reader created',data:{targetDeviceId:targetDeviceId ?? null,deviceCount:devices.length,hasReaderReset:typeof (reader as unknown as { reset?: unknown }).reset === 'function'},timestamp:Date.now()})}).catch(()=>{});
+      // #endregion
+
       if (!videoRef.current) return;
 
       const controls = await reader.decodeFromVideoDevice(
@@ -345,13 +364,21 @@ export default function QRApp() {
           }
         },
       );
+      cameraControlsRef.current = controls;
 
       // Keep a reference to the stream for cleanup
       streamRef.current = (videoRef.current.srcObject as MediaStream) ?? null;
 
+      // #region agent log
+      fetch('http://127.0.0.1:7691/ingest/3c8dd6a7-a9e4-48a9-b0f1-e78df23e676e',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'61c0e3'},body:JSON.stringify({sessionId:'61c0e3',runId:'camera-debug',hypothesisId:'H2-H3',location:'app/components/QRApp.tsx:startCamera',message:'camera controls resolved',data:{hasControlsStop:typeof controls.stop === 'function',hasStream:Boolean(streamRef.current),trackCount:streamRef.current?.getTracks().length ?? 0},timestamp:Date.now()})}).catch(()=>{});
+      // #endregion
+
       setCameraActive(true);
       return controls;
     } catch (err) {
+      // #region agent log
+      fetch('http://127.0.0.1:7691/ingest/3c8dd6a7-a9e4-48a9-b0f1-e78df23e676e',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'61c0e3'},body:JSON.stringify({sessionId:'61c0e3',runId:'camera-debug',hypothesisId:'H4',location:'app/components/QRApp.tsx:startCamera',message:'camera start failed',data:{name:err instanceof Error ? err.name : typeof err,message:err instanceof Error ? err.message : String(err)},timestamp:Date.now()})}).catch(()=>{});
+      // #endregion
       setBarcodeError(
         err instanceof Error && err.name === 'NotAllowedError'
           ? 'Camera access denied. Please allow camera permissions.'
